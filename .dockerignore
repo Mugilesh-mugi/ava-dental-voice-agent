@@ -1,0 +1,11 @@
+.env
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+data/consultation_inbox.jsonl
+data/*.db
+logs/
+evals/results/
+evals/recordings/
+.gradio/

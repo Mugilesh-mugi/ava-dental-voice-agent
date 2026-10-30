@@ -1,0 +1,31 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Runtime data (the local database, logs, saved bookings, audio). The documents in data/raw ARE part of the project.
+data/consultation_inbox.jsonl
+data/processed/*
+!data/processed/.gitkeep
+logs/
+*.db
+*.sqlite
+bookings.csv
+evals/recordings/*.wav
+evals/recordings/*.mp3
+evals/results/
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Gradio temporary files
+.gradio/
+flagged/

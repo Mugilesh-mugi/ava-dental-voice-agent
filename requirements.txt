@@ -1,0 +1,36 @@
+# Tested on Windows 11 with Python 3.13.
+# Install with:  python -m pip install -r requirements.txt
+# The ">=,<" ranges allow bug-fix updates but block big version jumps that could break the app.
+
+# Web server and demo page
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+gradio>=6.0,<7                   # the demo page (v6 chat message format is used)
+
+# The agent: LangGraph runs the conversation; LangChain talks to the LLM and searches the documents
+langgraph>=0.3,<2
+langchain-core>=1.0,<2           # documents, messages, embeddings and the in-memory vector store
+langchain-openai>=1.0,<2         # ChatOpenAI: talks to Groq, Gemini, xAI Grok or a local Ollama
+langchain-text-splitters>=1.0,<2 # splits the clinic documents into chunks
+langchain-huggingface>=1.0,<2    # turns text into vectors with a model that runs on this computer
+
+# Speech and search models
+torch>=2.6,<3                    # runs the speech and search models (CPU is fine)
+transformers>=4.48,<6            # Whisper (speech-to-text) and MMS (text-to-speech)
+faster-whisper>=1.0,<2           # faster Whisper engine for CPUs (STT_ENGINE=faster_whisper)
+sentence-transformers>=3.0,<7    # the embedding model behind the knowledge search
+scipy>=1.11,<2                   # clean resampling of microphone audio to 16 kHz
+numpy>=2.1,<3
+tzdata>=2024.1                   # time zone database (Windows has none built in)
+
+# Settings, database, monitoring
+pydantic-settings>=2.6,<3
+python-dotenv>=1.0,<2
+sqlalchemy>=2.0,<3
+psycopg[binary]>=3.2,<4          # PostgreSQL driver used by the default DATABASE_URL
+prometheus-client>=0.21,<1       # /metrics endpoint for monitoring tools
+
+# Testing and evaluation
+pytest>=8,<10
+httpx>=0.27,<1                   # the LLM tests talk to a fake server
+jiwer>=3.0,<5                    # word error rate for speech-to-text checks
