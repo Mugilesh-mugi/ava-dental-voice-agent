@@ -45,6 +45,7 @@ class AgentNodes:
         self._s = settings
         self._llm = llm
         self._bookings = bookings
+        self._retriever = retriever
         self._tools = ToolRegistry(ToolContext(settings, bookings, retriever, llm))
 
     # ==================================================================
@@ -140,12 +141,13 @@ class AgentNodes:
                     return self._agent_done(state, agent, chained[0], chained[1], turn, outcome)   # nothing more to do
                 if not reply.tool_calls:
                     text = _spoken(reply.content)
-                    if guardrails.states_unverified_fact(text) and choice == "auto":
-                        # It stated a time or a price in its own words. Make it use a tool instead.
-                        log.warning("llm_stated_a_fact_without_a_tool")
+                    if choice == "auto" and self._answered_without_the_facts(text, state["caller_text"]):
+                        # It stated a fact in its own words, or answered a question the clinic documents can answer
+                        # without looking them up. Make it use a tool instead.
+                        log.warning("llm_answered_without_a_tool")
                         messages += [{"role": "assistant", "content": reply.content},
-                                     {"role": "system", "content": "You gave a time or price yourself. "
-                                      "Call a tool so the facts come from the clinic's system."}]
+                                     {"role": "system", "content": "You answered from your own knowledge. Call a tool "
+                                      "(get_clinic_info for questions about the clinic) so the facts come from the clinic's system."}]
                         choice = "required"
                         continue
                     if guardrails.looks_like_advice(text):
@@ -177,6 +179,15 @@ class AgentNodes:
         except LLMError as e:
             log.error("llm_unavailable", extra={"error": str(e)})
             return self._agent_failed(state, agent, turn, prompts.LLM_ERROR, "llm_error")
+
+    def _answered_without_the_facts(self, reply: str, caller_text: str) -> bool:
+        """The LLM replied in words, with no tool. That is fine for a question to the caller ("What is your full name?"),
+        but not for a statement of fact: a time, price or address, or an answer to something the clinic documents cover."""
+        if guardrails.states_unverified_fact(reply):
+            return True
+        if "?" in reply and not guardrails.refuses(reply):
+            return False                                    # a normal question back to the caller
+        return self._retriever.search(caller_text).answerable
 
     def _agent_failed(self, state: CallState, agent: dict, turn: dict, reply: str, route: str) -> dict:
         agent["failures"] = agent.get("failures", 0) + 1

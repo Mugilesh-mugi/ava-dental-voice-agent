@@ -69,6 +69,15 @@ def test_a_whole_booking_through_tools(build_service, db, tool):
     assert service.end_call(session) == "booking_saved"
 
 
+def test_a_reason_that_is_not_dental_is_refused_and_nothing_is_booked(build_service, db):
+    script = list(BOOK_SCRIPT[:5]) + [calls("book_appointment", caller_name="Priya", reason="fever", slot_id="A", phone=PHONE)]
+    service = build_service(ScriptedToolLLM(*script))
+    session = service.start_call()
+    results = talk(service, session, *BOOK_TURNS)
+    assert results[-1].route == "not_dental" and results[-1].reply == prompts.NOT_DENTAL
+    assert "GP" in results[-1].reply and all_bookings(db) == []                 # and nothing was staged for a "yes"
+
+
 def test_the_llm_is_told_which_times_are_on_offer(build_service):
     llm = ScriptedToolLLM(*BOOK_SCRIPT[:5])
     service = build_service(llm)
@@ -184,6 +193,37 @@ def test_a_price_stated_without_a_tool_is_not_allowed(build_service):
     service = build_service(llm)
     result = talk(service, service.start_call(), "how much is a check-up?")[0]
     assert result.route in ("faq_answered", "unanswered") and llm.requests[1]["tool_choice"] == "required"
+
+
+def test_an_address_stated_without_a_tool_is_not_allowed(build_service):
+    llm = ScriptedToolLLM(says("We are located at 12 High Street, Springfield."),
+                          calls("get_clinic_info", question="Where is the clinic?"))
+    service = build_service(llm)
+    result = talk(service, service.start_call(), "where is the clinic?")[0]
+    assert "Springfield" not in result.reply and "Harbour Road" in result.reply
+    assert llm.requests[1]["tool_choice"] == "required"
+
+
+def test_a_clinic_question_answered_without_looking_it_up_is_sent_back_to_the_tool(build_service):
+    llm = ScriptedToolLLM(says("We are just by the shops."), calls("get_clinic_info", question="Where is the clinic?"))
+    service = build_service(llm)
+    result = talk(service, service.start_call(), "where is the clinic located")[0]
+    assert "Harbour Road" in result.reply and llm.requests[1]["tool_choice"] == "required"
+
+
+def test_a_refusal_to_share_the_clinics_phone_number_is_sent_back_to_the_tool(build_service):
+    llm = ScriptedToolLLM(says("I'm sorry, I can't share that over the phone. What can I help you with today?"),
+                          calls("get_clinic_info", question="What is the clinic's phone number?"))
+    service = build_service(llm)
+    result = talk(service, service.start_call(), "what is your phone number")[0]
+    assert "01632 960 000" in result.reply and llm.requests[1]["tool_choice"] == "required"
+
+
+def test_a_question_back_to_the_caller_is_not_sent_to_a_tool(build_service):
+    llm = ScriptedToolLLM(says("What is your full name?"))
+    service = build_service(llm)
+    result = talk(service, service.start_call(), "I need an appointment for a check-up")[0]
+    assert result.reply == "What is your full name?" and len(llm.requests) == 1
 
 
 def test_the_llm_cannot_loop_forever(build_service):

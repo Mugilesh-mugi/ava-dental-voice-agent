@@ -1,0 +1,65 @@
+@startuml architecture
+title Ava: system architecture
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+actor Caller
+component "Gradio page\nui/demo_page.py" as UI
+component "FastAPI app\napp.py + api/routes.py" as API
+component "CallService\nservices/call_service.py" as CS
+
+package "Ears and mouth (local CPU)" {
+  component "Speech to text\nfaster-whisper distil-small.en" as STT
+  component "Text to speech\nMMS TTS" as TTS
+}
+
+package "Brain: LangGraph (agent/)" {
+  component "classify\nrules + guardrails" as CL
+  component "Fixed replies (no LLM)\n999, urgent, handoff, advice,\nhello, thanks, unclear" as FIX
+  component "agent_confirm\ncode commits on yes" as CONF
+  component "tool_agent\nLLM chooses tools" as TA
+}
+
+cloud "Groq\nqwen3.8-27b\nllm/client.py" as LLM
+
+package "Tools (tools/)" {
+  component "6 tools\nchecked by tools/base.py" as TOOLS
+}
+
+package "Knowledge search (rag/)" {
+  component "retriever\nthreshold 0.35" as RET
+  component "vector index\ndata/processed" as IDX
+  file "data/raw/faq.md" as FAQ
+}
+
+package "Appointments (services/)" {
+  component "BookingService\n+ scheduling" as BS
+  component "mock clinic system" as MOCK
+}
+
+database "PostgreSQL\ncalls, messages, bookings,\ntool_calls, unanswered" as DB
+component "JSON logs + /metrics" as MON
+component "Dashboard\nui/dashboard.py" as DASH
+
+Caller --> UI
+UI --> API
+API --> CS
+CS --> STT
+CS --> CL
+CS --> TTS
+CL --> FIX
+CL --> CONF
+CL --> TA
+TA <--> LLM
+TA --> TOOLS
+TOOLS --> RET
+RET --> IDX
+FAQ ..> IDX : scripts/ingest.py
+TOOLS --> BS
+CONF --> BS
+BS --> DB
+BS --> MOCK
+CS --> DB
+CS --> MON
+DASH --> DB
+@enduml

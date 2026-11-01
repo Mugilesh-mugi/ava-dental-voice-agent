@@ -62,7 +62,7 @@ To add a tool: write a class in [src/voice_agent/tools/](src/voice_agent/tools/)
 
 ### The knowledge search (RAG)
 
-`data/raw/*.md` → **loader** reads them → **chunker** (LangChain's markdown splitter) cuts at each `## heading` → **embedder** (LangChain's HuggingFaceEmbeddings, runs on this computer) turns each chunk into a vector → **store** (LangChain's in-memory vector store) saves and searches the vectors → **retriever** applies the similarity limit (`MATCH_THRESHOLD`) and an optional reranker. When nothing scores above the limit, the answer is "I don't have that information" without asking the LLM at all.
+`data/raw/*.md` → **loader** reads them → **chunker** (LangChain's markdown splitter) cuts at each `## heading` → **embedder** (LangChain's HuggingFaceEmbeddings, runs on this computer) turns each chunk into a vector → **store** (LangChain's in-memory vector store) saves and searches the vectors → **retriever** scores each chunk by meaning plus a small bonus for shared key words (so short questions like "location" or "what is your email" still find their section), then applies the similarity limit (`MATCH_THRESHOLD`) and an optional reranker. When nothing scores above the limit, the answer is "I don't have that information" without asking the LLM at all.
 
 Run `python scripts/ingest.py` after changing a document (or `EMBED_MODEL`). It saves the index in `data/processed`, and the app loads that instead of embedding on every start. If the index no longer matches the documents, the app notices (a fingerprint of the text is stored with it), logs a warning, and embeds them itself: slower to start, never wrong. `python scripts/ingest.py --check` tells you whether the saved index is up to date.
 
@@ -189,14 +189,14 @@ Every setting can be changed with an environment variable or in `.env`. See [.en
 ## Tests and evaluation
 
 ```powershell
-python -m pytest                       # 380+ tests, under a minute, no LLM key needed (the LLM is faked)
+python -m pytest                       # about 400 tests, under a minute, no LLM key needed (the LLM is faked)
 python evals/run_evals.py              # safety, routing and knowledge-search checks: offline, uses no LLM requests
 python evals/bench_tool_calling.py --hosted qwen/qwen3.8-27b   # how well a model chooses tools (about 40 LLM requests)
 python evals/run_wer.py                # speech-to-text accuracy on your own recordings
 ```
 
 - **pytest** covers the tools and the checks that refuse unsafe calls, the whole conversation (booking, moving, cancelling, availability, with a scripted LLM and a frozen clock), the calendar and double-booking protection, date understanding, the safety rules, the knowledge search (with fakes, and with the real embedding model), the LLM client (against a fake server), the login, and the web endpoints.
-- **run_evals.py** prints the emergency catch rate (goal 100%), routing accuracy, whether the knowledge search finds the right section, and whether it refuses out-of-scope questions. It exits with an error if any emergency is missed, so it can block a release automatically. Latest: emergencies 11/11, routing 36/36, right section 10/10, out-of-scope refusals 3/3.
+- **run_evals.py** prints the emergency catch rate (goal 100%), routing accuracy, whether the knowledge search finds the right section, and whether it refuses out-of-scope questions. It exits with an error if any emergency is missed, so it can block a release automatically. Latest: emergencies 11/11, routing 36/36, right section 15/15, out-of-scope refusals 3/3.
 - **bench_tool_calling.py** gives a model 40 caller sentences and checks it picks the right tool with the right arguments. Use it before switching `LLM_MODEL`.
 - **run_wer.py** measures Word Error Rate. Put `name.wav` + `name.txt` (the correct sentence) pairs in `evals/recordings/`.
 

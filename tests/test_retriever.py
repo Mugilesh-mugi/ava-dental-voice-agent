@@ -9,7 +9,7 @@ from langchain_core.documents import Document
 from fakes import KeywordEmbedder
 from voice_agent.config import Settings
 from voice_agent.rag import load_chunks, load_documents, split_into_chunks
-from voice_agent.rag.retriever import Retriever, build_retriever
+from voice_agent.rag.retriever import Retriever, _key_words, build_retriever
 from voice_agent.rag.store import build_store, chunks_fingerprint, load_index, read_meta, save_index
 
 
@@ -72,6 +72,26 @@ def test_only_chunks_above_the_threshold_are_returned():
     assert titles(result) == ["Parking"] and result.matches[0][1] > 0.25
 
 
+def test_key_words_ignore_filler_and_plurals():
+    assert _key_words("What are the services you provide?") == {"service", "provide"}
+    assert _key_words("Where are you located?") == {"where", "located"}
+
+
+def test_a_shared_key_word_lifts_a_short_question():
+    """Short questions score low on meaning alone; a topic word that appears in the section counts as well."""
+    class Unrelated(KeywordEmbedder):
+        def embed_documents(self, texts):           # no text ever looks like the question, so only the key words decide
+            return [[0.0, 1.0] for _ in texts]
+
+        def embed_query(self, text):
+            return [1.0, 0.0]
+
+    chunks = [chunk("Contact", "To call us use this number. You can also email us."), chunk("Hours", "Open 8 to 6.")]
+    result = Retriever(chunks, Unrelated(), threshold=0.2, top_k=1).search("what is your email")
+    assert titles(result) == ["Contact"]
+    assert not Retriever(chunks, Unrelated(), threshold=0.2, top_k=1).search("what is the weather").answerable
+
+
 def test_an_optional_reranker_can_reorder_the_matches():
     chunks = [chunk("Parking", "Free parking behind the building."), chunk("Disabled parking", "Free parking for blue badge holders.")]
     calls = []
@@ -83,7 +103,7 @@ def test_an_optional_reranker_can_reorder_the_matches():
     plain = Retriever(chunks, KeywordEmbedder(), 0.1, 2).search("free parking")
     reranked = Retriever(chunks, KeywordEmbedder(), 0.1, 2, reranker=reverse).search("free parking")
     assert titles(reranked) == list(reversed(titles(plain))) and calls == ["free parking"]
-    assert Retriever(chunks, KeywordEmbedder(), 0.99, 2, reranker=reverse).search("free parking").matches == [] and calls == ["free parking"]
+    assert Retriever(chunks, KeywordEmbedder(), 1.01, 2, reranker=reverse).search("free parking").matches == [] and calls == ["free parking"]
 
 
 # ---------- The saved index (scripts/ingest.py) ----------

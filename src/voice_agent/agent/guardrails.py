@@ -178,11 +178,41 @@ def looks_like_advice(llm_reply: str) -> bool:
 # Checks on what the LLM wrote
 # ======================================================================
 
-# A time or a price has to come from a tool (the calendar, the FAQ). If the LLM writes one itself, it is guessing.
-_UNVERIFIED_FACT = re.compile(r"\d{1,2}:\d{2}|\b\d{1,2}\s?(?:am|pm)\b|o'clock|half past|quarter (?:past|to)|"
-                              r"[£$]\s?\d|\b\d+\s?pounds?\b|\bpounds?\s?\d", re.IGNORECASE)
+# A time, a price or an address has to come from a tool (the calendar, the FAQ). If the LLM writes one itself, it is guessing.
+_STREETS = r"(?:street|st|road|rd|lane|ln|avenue|ave|drive|close|court|way|place|square|crescent|terrace|gardens|hill)"
+_UNVERIFIED_FACT = re.compile(
+    r"\d{1,2}:\d{2}|\b\d{1,2}\s?(?:am|pm)\b|o'clock|half past|quarter (?:past|to)|"
+    r"[£$]\s?\d|\b\d+\s?pounds?\b|\bpounds?\s?\d|"
+    rf"\b\d{{1,4}}[a-z]?\s+(?:[a-z']+\s+){{0,3}}{_STREETS}\b|"                  # "12 High Street"
+    r"\b[a-z]{1,2}\d[a-z\d]?\s?\d[a-z]{2}\b|"                                   # a UK postcode, "BW1 2AB"
+    r"\b(?:we(?:'re| are) (?:located|based|found)|our address|you can find us|find us at)\b|"
+    r"\b(?:call|ring|phone|email|contact) us (?:on|at)\b|\bour (?:phone )?number is\b|\w@\w+\.\w", re.IGNORECASE)
+
+
+# A visit reason that is plainly not dental ("fever"). Conservative on purpose: a dental word anywhere in the reason
+# ("fever from a tooth abscess", "sensitive to cold") means the clinic may well be the right place, so it is not refused.
+_NOT_DENTAL = re.compile(r"\b(?:fever|flu|influenza|covid|cough(?:ing)?|high temperature|stomach|vomit(?:ing)?|nausea|"
+                         r"diarrh?oea|back pain|knee|rash|migraine|period pain|pregnan\w*)\b", re.IGNORECASE)
+_DENTAL = re.compile(r"\b(?:teeth|tooth|toothache|gums?|jaw|mouth|dental|dentist|filling|crown|denture|braces|hygien\w*|"
+                     r"check-?up|clean(?:ing)?|whitening|scale|polish|x-?ray|extraction|wisdom|root canal|cavity|abscess|"
+                     r"orthodont\w*|bite|smile|lip|tongue)\b", re.IGNORECASE)
+
+
+def is_not_dental(reason: str) -> bool:
+    """True if the reason for a visit is plainly something a dental clinic does not treat."""
+    return bool(_NOT_DENTAL.search(reason)) and not _DENTAL.search(reason)
+
+
+_REFUSAL = re.compile(r"\bcan(?:'|no)?t (?:share|give|provide|tell|disclose|help|say|answer)|\bunable to\b|\bnot able to\b|"
+                      r"\bnot (?:allowed|permitted)\b|\bdon'?t have (?:that|this)\b|\bcan(?:'|no)?t do that\b", re.IGNORECASE)
+
+
+def refuses(llm_reply: str) -> bool:
+    """True if the LLM is declining to answer ("I can't share that"). For a clinic question that is wrong: the clinic's
+    own phone number, address and hours are public, and the documents have them."""
+    return bool(_REFUSAL.search(llm_reply))
 
 
 def states_unverified_fact(llm_reply: str) -> bool:
-    """True if the LLM wrote a clock time or a price in its own words."""
+    """True if the LLM wrote a clock time, a price, an address or a contact detail in its own words."""
     return bool(_UNVERIFIED_FACT.search(llm_reply))

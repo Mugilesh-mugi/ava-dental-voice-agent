@@ -1,0 +1,54 @@
+@startuml booking_sequence
+title Ava: booking flow (the LLM stages, the code commits)
+skinparam shadowing false
+skinparam sequenceMessageAlign left
+autonumber
+
+actor Caller
+participant "Speech\n(STT / TTS)" as S
+participant "LangGraph\nagent/nodes.py" as G
+participant "LLM\n(Groq qwen3.8-27b)" as L
+participant "Tools + checks\ntools/" as T
+participant "BookingService\nservices/" as B
+database "PostgreSQL" as D
+
+Caller -> S : "Book a check-up Saturday morning"
+S -> G : text
+G -> L : instructions + last 6 turns + tool list
+L --> G : tool request: check_availability("Saturday morning")
+G -> T : run tool
+T -> B : free slots?
+B -> D : confirmed bookings that day
+D --> B : rows
+B --> T : free slots as A / B / C
+T --> G : exact words "I have 9:00, 9:30 or 10:00"
+G -> S : code speaks the times
+S -> Caller : audio
+
+Caller -> S : "The second one, I'm Sam, 0770 900 123"
+S -> G : text
+G -> L : hint: caller chose slot B
+L --> G : tool request: book_appointment(name, B, phone)
+G -> T : run tool
+note over T
+  Checks:
+  - slot B was offered?
+  - phone really said by the caller?
+  Refused => LLM must ask the caller
+end note
+T --> G : staged in call state (NOT saved)
+G -> S : read-back "Shall I book that?"
+S -> Caller : audio
+
+Caller -> S : "Yes"
+S -> G : text
+note over G : rules.is_yes -> agent_confirm\nNo LLM involved
+G -> B : create booking
+B -> D : INSERT (unique index on confirmed start time)
+D --> B : ok, or "time just taken"
+B --> G : reference SD-000004
+G -> S : "You're booked. Reference SD-000004"
+S -> Caller : audio
+
+note over T, D : every tool call is also saved in tool_calls\nwith personal details masked
+@enduml

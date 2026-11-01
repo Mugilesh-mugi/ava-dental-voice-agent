@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from ..agent import prompts, rules, speech
+from ..agent import guardrails, prompts, rules, speech
 from .base import Tool, ToolContext, ToolResult, heard_phone, offered_slot
 
 
@@ -20,6 +20,8 @@ class BookAppointment(Tool):
     def run(self, args: dict, agent: dict, ctx: ToolContext) -> ToolResult:
         name = rules.clean_name(str(args.get("caller_name") or ""))
         reason = rules.clean_answer(str(args.get("reason") or ""))
+        if guardrails.is_not_dental(reason):            # "fever": say so in the code's own words, and book nothing
+            return ToolResult(True, say=prompts.NOT_DENTAL, outcome="answered", turn={"route": "not_dental"})
         phone, phone_error = heard_phone(args.get("phone"), agent)
         problems = []
         if len(name) < 2:

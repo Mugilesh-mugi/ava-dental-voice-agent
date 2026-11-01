@@ -99,9 +99,20 @@ def test_greeting_is_never_an_emergency():
 
 # ---------- Checks on what the LLM wrote ----------
 @pytest.mark.parametrize("reply", ["We open at 9:30", "A check-up is 45 pounds", "How about Saturday at 9 am", "half past nine",
-                                   "That costs £60", "see you at ten o'clock", "quarter to four", "$20"])
+                                   "That costs £60", "see you at ten o'clock", "quarter to four", "$20",
+                                   "We are located at 12 High Street, Springfield.", "It's 24 Harbour Road, near the post office",
+                                   "You can find us at BW1 2AB", "We're based in the town centre", "Call us on the main line",
+                                   "Email us at info@sunrise.example"])
 def test_a_time_or_price_in_the_llms_own_words_is_flagged(reply):
     assert guardrails.states_unverified_fact(reply)
+
+
+@pytest.mark.parametrize("reason,refused", [
+    ("fever", True), ("I have a high temperature", True), ("flu", True), ("stomach ache", True), ("back pain", True),
+    ("a check-up", False), ("toothache", False), ("fever from a tooth abscess", False), ("sensitive gums", False),
+    ("scale and polish", False), ("", False)])
+def test_a_plainly_non_dental_reason_is_recognised(reason, refused):
+    assert guardrails.is_not_dental(reason) is refused
 
 
 @pytest.mark.parametrize("reply", ["What is your full name?", "Which day suits you?", "We have free parking behind the building.",

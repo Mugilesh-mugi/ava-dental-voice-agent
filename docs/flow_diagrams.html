@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ava technical flow</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2430; --muted:#5b6675; --line:#d9dee5; --accent:#1f6feb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12161c; --card:#1b212a; --text:#e8ecf1; --muted:#9aa6b5; --line:#2e3744; --accent:#5aa2ff; }
+  }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, "Segoe UI", sans-serif; }
+  header { padding:20px 24px 8px; }
+  h1 { margin:0 0 4px; font-size:22px; }
+  header p { margin:0; color:var(--muted); }
+  nav { display:flex; flex-wrap:wrap; gap:8px; padding:12px 24px; position:sticky; top:0; background:var(--bg); z-index:2; border-bottom:1px solid var(--line); }
+  nav button { border:1px solid var(--line); background:var(--card); color:var(--text); padding:8px 14px; border-radius:8px; cursor:pointer; font:inherit; }
+  nav button[aria-selected="true"] { background:var(--accent); border-color:var(--accent); color:#fff; }
+  main { padding:16px 24px 48px; max-width:1300px; margin:0 auto; }
+  section { display:none; }
+  section.active { display:block; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; overflow:auto; }
+  .say { margin:12px 0 0; padding:12px 16px; border-left:4px solid var(--accent); background:var(--card); border-radius:6px; }
+  .say b { color:var(--accent); }
+  h2 { margin:0 0 4px; font-size:19px; }
+  .sub { margin:0 0 12px; color:var(--muted); }
+  @media print { nav { display:none; } section { display:block !important; page-break-after:always; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ava: AI voice receptionist for Sunrise Dental</h1>
+  <p>Technical flow diagrams. Press 1 to 5 to switch, or use the buttons. Ctrl+P prints all five pages.</p>
+</header>
+<nav role="tablist" id="tabs">
+  <button role="tab" data-t="t1" aria-selected="true">1 Architecture</button>
+  <button role="tab" data-t="t2" aria-selected="false">2 One turn: routing</button>
+  <button role="tab" data-t="t3" aria-selected="false">3 Booking sequence</button>
+  <button role="tab" data-t="t4" aria-selected="false">4 Knowledge search (RAG)</button>
+  <button role="tab" data-t="t5" aria-selected="false">5 Safety layers</button>
+</nav>
+<main>
+
+<section id="t1" class="active">
+  <h2>1. System architecture</h2>
+  <p class="sub">Four parts: ears, brain, mouth, notebook. Everything is wired together in app.py.</p>
+  <div class="card"><pre class="mermaid">
+flowchart LR
+  U([Caller<br/>browser mic or text]) --> UI[Gradio page<br/>ui/demo_page.py]
+  UI --> API[FastAPI app<br/>app.py + api/routes.py]
+  API --> CS[CallService<br/>services/call_service.py<br/>runs one turn]
+  CS --> STT[Ears: speech to text<br/>faster-whisper distil-small.en<br/>voice/stt.py]
+  CS --> BRAIN
+  CS --> TTS[Mouth: text to speech<br/>MMS TTS<br/>voice/tts.py]
+  subgraph BRAIN[Brain: LangGraph, agent/graph.py]
+    direction TB
+    CL{classify<br/>rules + guardrails}
+    FIX[Fixed replies, no LLM<br/>999 / urgent / handoff<br/>advice / hello / thanks / unclear]
+    CONF[agent_confirm<br/>code commits on yes]
+    TA[tool_agent<br/>LLM chooses tools]
+    CL --> FIX
+    CL --> CONF
+    CL --> TA
+  end
+  TA <--> LLM[(Groq LLM<br/>qwen3.8-27b<br/>llm/client.py)]
+  TA --> TOOLS[6 tools, tools/<br/>checked by tools/base.py]
+  TOOLS --> RAG[Knowledge search<br/>rag/ + data/raw/faq.md<br/>MiniLM embeddings]
+  TOOLS --> BS[BookingService + scheduling<br/>services/]
+  CONF --> BS
+  BS --> DB[(PostgreSQL<br/>calls, messages, bookings,<br/>tool_calls, unanswered)]
+  CS --> DB
+  CS --> MON[JSON logs + /metrics<br/>Prometheus]
+  BS --> MOCK[Mock clinic system<br/>services/mock_clinic.py]
+  DASH[Dashboard tab<br/>ui/dashboard.py] --> DB
+  </pre></div>
+  <div class="say"><b>Say:</b> "The LLM is one box among many. It never touches the database directly. It can only ask for a tool, and the code in the middle decides whether to run it."</div>
+</section>
+
+<section id="t2">
+  <h2>2. What happens on one turn (routing)</h2>
+  <p class="sub">The safety rules run first. Only normal requests reach the LLM.</p>
+  <div class="card"><pre class="mermaid">
+flowchart TD
+  A([Caller speaks]) --> B[Speech to text]
+  B --> C{classify<br/>agent/rules.py<br/>agent/guardrails.py}
+  C -->|can't breathe, bleeding won't stop| D[severe_emergency<br/>fixed text: call 999]
+  C -->|swollen face, knocked-out tooth| E[urgent_dental<br/>fixed text: urgent line / NHS 111]
+  C -->|wants a person| F[handoff<br/>fixed text]
+  C -->|change is waiting AND caller said yes or no| G[agent_confirm<br/>code, not the LLM]
+  C -->|medicine or treatment advice| H[advice<br/>fixed refusal]
+  C -->|hello / thanks| I[greeting / thanks<br/>fixed text]
+  C -->|noise, hmm, um| J[unclear<br/>ask to repeat]
+  C -->|anything else| K[tool_agent<br/>LLM + tools]
+  G --> L[booking_service writes to PostgreSQL]
+  K --> M{LLM reply}
+  M -->|asks for a tool| N[tool registry<br/>checks + runs tool]
+  N -->|result| K
+  M -->|plain words| O{states a time or price<br/>in its own words?}
+  O -->|yes: reject, force a tool| K
+  O -->|no| P[reply]
+  D --> Q[Text to speech]
+  E --> Q
+  F --> Q
+  H --> Q
+  I --> Q
+  J --> Q
+  L --> Q
+  P --> Q
+  Q --> R[Save turn: route, score, timings<br/>logs + metrics]
+  R --> S([Caller hears Ava])
+  </pre></div>
+  <div class="say"><b>Say:</b> "Eight of the nine routes use no LLM at all. That is deliberate: emergencies and confirmations must be predictable."</div>
+</section>
+
+<section id="t3">
+  <h2>3. Booking, step by step (sequence)</h2>
+  <p class="sub">The LLM stages a booking. Plain code commits it after a spoken yes.</p>
+  <div class="card"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor C as Caller
+  participant S as Speech (STT/TTS)
+  participant G as LangGraph (nodes.py)
+  participant L as LLM (Groq)
+  participant T as Tools + checks (tools/)
+  participant B as BookingService
+  participant D as PostgreSQL
+  C->>S: "Book a check-up Saturday morning"
+  S->>G: text
+  G->>L: instructions + last 6 turns + tool list
+  L-->>G: tool request: check_availability("Saturday morning")
+  G->>T: run tool
+  T->>B: free slots?
+  B->>D: confirmed bookings on that day
+  D-->>B: rows
+  B-->>T: free slots, as A / B / C
+  T-->>G: exact words: "I have 9:00, 9:30 or 10:00"
+  G->>S: code speaks the times
+  S->>C: audio
+  C->>S: "The second one, I'm Sam, 0770 900 123"
+  S->>G: text
+  G->>L: context hint: caller chose slot B
+  L-->>G: tool request: book_appointment(name, slot B, phone)
+  G->>T: run tool
+  Note over T: Checks: slot B was offered?<br/>phone number really said by the caller?
+  T-->>G: staged in call state, not saved
+  G->>S: read-back: "Sam, Saturday 9:30. Shall I book that?"
+  S->>C: audio
+  C->>S: "Yes"
+  S->>G: text
+  Note over G: rules.is_yes, then agent_confirm.<br/>No LLM involved.
+  G->>B: create booking
+  B->>D: INSERT (unique index on confirmed start time)
+  D-->>B: ok, or "time just taken"
+  B-->>G: reference SD-000004
+  G->>S: "You're booked. Reference SD-000004"
+  S->>C: audio
+  Note over T,D: Every tool call is also written to the tool_calls table with personal details masked
+  </pre></div>
+  <div class="say"><b>Say:</b> "Even if the LLM is wrong, the worst it can do is propose something. Nothing is saved until the caller says yes, and the database refuses two bookings at the same time."</div>
+</section>
+
+<section id="t4">
+  <h2>4. Knowledge search (RAG)</h2>
+  <p class="sub">Top: built once by scripts/ingest.py. Bottom: used on every clinic question.</p>
+  <div class="card"><pre class="mermaid">
+flowchart TD
+  subgraph OFFLINE[Offline: python scripts/ingest.py]
+    direction LR
+    F1[data/raw/faq.md<br/>the clinic's facts] --> F2[loader.py<br/>read files]
+    F2 --> F3[chunker.py<br/>split at each ## heading<br/>10 chunks]
+    F3 --> F4[embedder.py<br/>MiniLM: text to vector]
+    F4 --> F5[store.py<br/>save index.json + meta.json<br/>with a fingerprint]
+  end
+  subgraph ONLINE[Online: every clinic question]
+    direction TB
+    Q1[Caller: How much is a check-up?] --> Q2[LLM calls get_clinic_info]
+    Q2 --> Q3[retriever.py<br/>embed the question]
+    Q3 --> Q4[compare with chunk vectors<br/>cosine similarity]
+    Q4 --> Q5{best score at least 0.35?}
+    Q5 -->|no| Q6[I don't have that information<br/>logged as unanswered question]
+    Q5 -->|yes| Q7[top 2 chunks go to the LLM]
+    Q7 --> Q8[LLM phrases the answer<br/>from those chunks only]
+  end
+  F5 -.loaded at startup.-> Q3
+  F5 -.if documents changed, fingerprint differs:<br/>re-embed at start.-> Q3
+  </pre></div>
+  <div class="say"><b>Say:</b> "The threshold is what stops confident wrong answers. Real clinic questions score about 0.39 and up; questions like weather score about 0.30 and below."</div>
+</section>
+
+<section id="t5">
+  <h2>5. Safety layers (defence in depth)</h2>
+  <p class="sub">Each layer assumes the one before it can fail.</p>
+  <div class="card"><pre class="mermaid">
+flowchart TD
+  L1[Layer 1: emergency and advice rules<br/>run BEFORE the LLM, fixed replies] --> L2
+  L2[Layer 2: LLM only chooses tools<br/>it has no database access] --> L3
+  L3[Layer 3: argument checks, tools/base.py<br/>slot must have been offered<br/>booking id must be known<br/>phone must have been said by the caller] --> L4
+  L4[Layer 4: output check, guardrails.py<br/>LLM may not state a time or price itself<br/>tools return the exact words] --> L5
+  L5[Layer 5: stage then commit<br/>tools only stage; a spoken yes, detected by code, commits] --> L6
+  L6[Layer 6: database<br/>unique index on confirmed start time<br/>cannot double book even in a race] --> L7
+  L7[Layer 7: audit and monitoring<br/>tool_calls table with masked arguments<br/>metrics, JSON logs per call]
+  </pre></div>
+  <div class="say"><b>Say:</b> "No single layer is trusted. Layers 3 to 6 mean a wrong LLM answer cannot become a wrong booking."</div>
+</section>
+
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  const dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default", securityLevel: "loose",
+                       flowchart: { useMaxWidth: false, htmlLabels: true }, sequence: { useMaxWidth: false } });
+  const rendered = new Set();
+  async function render(id) {
+    if (rendered.has(id)) return;
+    rendered.add(id);
+    await mermaid.run({ nodes: document.querySelectorAll("#" + id + " .mermaid") });
+  }
+  function show(id) {
+    document.querySelectorAll("section").forEach(s => s.classList.toggle("active", s.id === id));
+    document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.t === id));
+    render(id);
+  }
+  document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => show(b.dataset.t)));
+  document.addEventListener("keydown", e => { if (/^[1-5]$/.test(e.key)) show("t" + e.key); });
+  // Printing: render every diagram first
+  window.addEventListener("beforeprint", () => ["t1","t2","t3","t4","t5"].forEach(render));
+  show("t1");
+</script>
+</body>
+</html>

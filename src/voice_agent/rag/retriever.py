@@ -24,6 +24,26 @@ log = logging.getLogger(__name__)
 Match = tuple[Document, float]                       # a chunk and its similarity score
 Reranker = Callable[[str, list[Match]], list[Match]]
 
+KEYWORD_BONUS = 0.25      # added to the meaning score when every key word of the question appears in the chunk
+# Words that say nothing about the topic. "clinic" and "dentist" are here because every chunk is about them.
+_FILLER = frozenset("""a an the is are was were be do does did can could would should will you your yours i me my we our us
+    it its this that these those what which who whom whose when why how and or but if to of in on at for with about
+    from by as there here any some please tell know like want need get have has had also other all things thing provided
+    clinic dentist dental sunrise ava""".split())
+
+
+def _key_words(text: str) -> set[str]:
+    """The topic words of a question, lower case, with a trailing plural 's' removed ("services" matches "service")."""
+    words = (w.strip(".,!?;:'\"()") for w in text.lower().split())
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words if w and w not in _FILLER}
+
+
+def _share_of(words: set[str], doc: Document) -> float:
+    """How much of the question's topic words appear in this chunk (0 to 1)."""
+    if not words:
+        return 0.0
+    return len(words & _key_words(doc.page_content)) / len(words)
+
 
 @dataclass(frozen=True)
 class SearchResult:
@@ -45,7 +65,12 @@ class Retriever:
         log.info("knowledge_loaded", extra={"chunks": len(self._store.store)})
 
     def search(self, question: str) -> SearchResult:
-        matches = self._store.similarity_search_with_score(question, k=self.top_k)
+        # Meaning (embeddings) plus a small bonus for shared key words: short questions such as "location" or "what is
+        # your email" score low on meaning alone, although the section plainly answers them.
+        everything = self._store.similarity_search_with_score(question, k=len(self._store.store) or 1)
+        words = _key_words(question)
+        boosted = [(doc, min(1.0, score + KEYWORD_BONUS * _share_of(words, doc))) for doc, score in everything]
+        matches = sorted(boosted, key=lambda m: m[1], reverse=True)[:self.top_k]
         best = matches[0][1] if matches else 0.0
         if best < self.threshold:
             return SearchResult([], best)

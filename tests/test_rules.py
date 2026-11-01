@@ -69,6 +69,10 @@ def test_yes_and_no(text, yes, no):
     ("+44 7700 900123", "07700900123"),
     ("I don't know", None),
     ("12345", None),
+    # a time or date said earlier in the same message must not be glued onto the number
+    ("book an appointment at monday 8, my name is Sam and my mobile number is 1234567899", "1234567899"),
+    ("book monday at 8 my number is 07700900123", "07700900123"),
+    ("on the 12th, my number is 07700 900123", "07700900123"),
 ])
 def test_extract_phone(text, expected):
     assert rules.extract_phone(text) == expected

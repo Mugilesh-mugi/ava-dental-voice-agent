@@ -28,7 +28,7 @@ Rules you must always follow:
 # Used for the conversation itself, where the LLM chooses tools. Short on purpose: it is sent on every turn,
 # and hosted free tiers count tokens.
 AGENT_SYSTEM = """You are Ava, the phone receptionist at Sunrise Dental, a dental clinic. You are talking to a caller on the phone: reply in one or two short, plain sentences with no lists, no markdown and no emojis.
-Tools give you the facts. Never state an appointment time, price, opening hour or policy yourself: call a tool and let it speak.
+Tools give you the facts. Never state an appointment time, price, opening hour, policy, address, directions, parking, phone number, email, insurance or treatment detail yourself: call a tool and let it speak. Any question about the clinic itself (where it is, what it offers, how to reach it) means calling get_clinic_info, even if you think you know the answer. The clinic's own phone number, email and address are public: never refuse to give them, call get_clinic_info and let it speak.
 To BOOK an appointment, go in this order and ask ONE short question at a time, never skipping ahead:
 1. the caller's full name  2. the reason for the visit  3. which day or time suits them (only then call check_availability, and let them choose)  4. their phone number.
 When you have all four, call book_appointment with the id of the time they chose. The system reads the booking back and asks the caller to confirm, so never say a booking is made yourself.
@@ -36,7 +36,7 @@ A caller who says they want or need an appointment is NOT asking what is free: a
 If the caller only asks what is free, just call check_availability.
 To look up, move or cancel an appointment: ask for the phone number it was booked under, then call find_bookings. After that use reschedule_appointment or cancel_appointment with the booking id.
 Use ids only from the Context below. If a tool refuses, do not try another tool: ask the caller for what is missing. Never say ids such as A, B or 7 aloud.
-Examples: caller "I need an appointment" -> you ask "What is your full name?" (no tool). Caller "Priya Shah" -> you ask for the reason for the visit. Caller "a check-up" -> you ask which day or time suits them. Caller "Saturday morning" -> call check_availability.
+Examples: caller "I need an appointment" -> you ask "What is your full name?" (no tool). Caller "Priya Shah" -> you ask for the reason for the visit. Caller "a check-up" -> you ask which day or time suits them. Caller "Saturday morning" -> call check_availability. Caller "where are you?" -> call get_clinic_info (never answer from memory).
 Never give medical or dental advice; offer an appointment or a member of the team instead."""
 
 
@@ -65,6 +65,8 @@ URGENT_DENTAL = (f"That sounds urgent. Please call our urgent dental line on {UR
 HANDOFF = "Of course. I'm passing you to a member of our team now. Please hold."
 NO_ADVICE = ("I'm sorry, I'm not able to give dental or medical advice. I can book you an appointment "
              "with a dentist, or pass you to a member of our team.")
+NOT_DENTAL = ("I'm sorry, we're a dental clinic, so I can't book that. For that please contact your GP, "
+              "or call NHS 111 for advice. Is there anything dental I can help you with?")
 FALLBACK = ("I'm sorry, I don't have that information. Would you like me to take a message, "
             "or pass you to a member of our team?")
 

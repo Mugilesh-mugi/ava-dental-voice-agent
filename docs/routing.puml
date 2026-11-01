@@ -1,0 +1,46 @@
+@startuml routing
+title Ava: what happens on one turn
+skinparam shadowing false
+skinparam defaultTextAlignment center
+
+start
+:Caller speaks;
+:Speech to text\nvoice/stt.py;
+:classify\nagent/rules.py + agent/guardrails.py;
+
+if (message type?) then (can't breathe, bleeding)
+  :severe_emergency\nfixed text: call 999;
+elseif (swollen face, tooth knocked out) then
+  :urgent_dental\nfixed text: urgent line / NHS 111;
+elseif (wants a person) then
+  :handoff\nfixed text;
+elseif (change waiting + yes / no) then
+  :agent_confirm\ncode, not the LLM;
+  :booking_service writes to PostgreSQL;
+elseif (medicine or treatment advice) then
+  :advice\nfixed refusal;
+elseif (hello / thanks) then
+  :greeting / thanks\nfixed text;
+elseif (noise, hmm, um) then
+  :unclear\nask to repeat;
+else (anything else)
+  repeat
+    :tool_agent: LLM sees instructions,\nlast 6 turns, tool list;
+    if (LLM asks for a tool?) then (yes)
+      :tools/registry.py\nchecks arguments, runs tool,\nwrites audit row;
+    else (plain words)
+      if (states a time or price itself?) then (yes)
+        :reject, force a tool;
+      else (no)
+        :reply;
+        break
+      endif
+    endif
+  repeat while (more tool rounds, max 3?)
+endif
+
+:Text to speech\nvoice/tts.py;
+:Save turn: route, score, timings\nlogs + /metrics;
+:Caller hears Ava;
+stop
+@enduml

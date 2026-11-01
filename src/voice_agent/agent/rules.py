@@ -125,21 +125,29 @@ def is_noise(text: str) -> bool:
 def extract_phone(text: str) -> str | None:
     """Pull a UK-style phone number (10 or 11 digits) out of text. Understands spoken digits
     ("oh seven seven double one ..."). Returns the digits, or None if there are not enough."""
-    words = normalise(text).split()
-    digits, repeat = [], 1
-    for w in words:
+    # The digits are collected in runs of neighbouring number words, so a stray "8" in "Monday at 8, my number is ..."
+    # is not glued onto the front of the phone number. Only if no run is long enough are all the digits joined,
+    # for a number said with other words in the middle ("0770 uh 0090 0123").
+    runs: list[list[str]] = [[]]
+    repeat = 1
+    for w in normalise(text).split():
         if w in ("double", "triple"):
             repeat = 2 if w == "double" else 3
             continue
         if w.isdigit():
-            digits.append(w * repeat if len(w) == 1 else w)
+            runs[-1].append(w * repeat if len(w) == 1 else w)
         elif w in NUMBER_WORDS:
-            digits.append(NUMBER_WORDS[w] * repeat)
+            runs[-1].append(NUMBER_WORDS[w] * repeat)
+        elif runs[-1]:
+            runs.append([])
         repeat = 1
-    number = "".join(digits)
-    if number.startswith("44") and len(number) == 12:
-        number = "0" + number[2:]
-    return number if 10 <= len(number) <= 11 else None
+    candidates = ["".join(r) for r in runs if r] + ["".join("".join(r) for r in runs)]
+    for number in candidates:
+        if number.startswith("44") and len(number) == 12:
+            number = "0" + number[2:]
+        if 10 <= len(number) <= 11:
+            return number
+    return None
 
 
 # "my name is X" anywhere in a message, e.g. "sorry, my name is Mugilesh". Longest phrases first.

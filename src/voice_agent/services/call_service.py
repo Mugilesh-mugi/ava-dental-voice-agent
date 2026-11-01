@@ -23,7 +23,7 @@ import numpy as np
 from sqlalchemy import func, select
 
 from .. import monitoring
-from ..agent import prompts
+from ..agent import prompts, speech
 from ..agent.graph import VoiceAgent
 from ..agent.state import CallState, new_call_state
 from ..config import Settings
@@ -136,7 +136,7 @@ class CallService:
             return None, 0.0
         start = time.perf_counter()
         try:
-            audio = self._tts.speak(text)
+            audio = self._tts.speak(speech.for_voice(text))      # digits spelled out; the screen keeps the original text
         except Exception:
             log.exception("tts_failed")
             monitoring.ERRORS.labels("tts").inc()
