@@ -30,7 +30,7 @@ All clinic details, names, prices and phone numbers are invented. No real patien
  │       thanks / hello / asks for advice / noise ► fixed replies, no LLM        │
  │       anything else ─────► tool_agent: the LLM answers, or chooses a tool     │
  │                                                                              │
- │  3. MOUTH   MMS (text-to-speech) ── reply audio                               │
+ │  3. MOUTH   Kokoro (text-to-speech) ── reply audio                               │
  │  4. RECORD  database (calls, messages, bookings, tool calls), JSON log, metrics│
  └──────────────────────────────────────────────────────────────────────────────┘
 ```

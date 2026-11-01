@@ -10,6 +10,7 @@ venv/
 
 # Runtime data (the local database, logs, saved bookings, audio). The documents in data/raw ARE part of the project.
 data/consultation_inbox.jsonl
+data/models/
 data/processed/*
 !data/processed/.gitkeep
 logs/

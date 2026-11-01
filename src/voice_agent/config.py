@@ -41,7 +41,10 @@ class Settings(BaseSettings):
     stt_model: str = "openai/whisper-small"            # speech-to-text
     # "transformers" (Hugging Face) or "faster_whisper" (several times faster on a CPU; use STT_MODEL=distil-small.en)
     stt_engine: Literal["transformers", "faster_whisper"] = "transformers"
-    tts_model: str = "facebook/mms-tts-eng"            # text-to-speech
+    tts_model: str = "kokoro"                          # text-to-speech: "kokoro", or facebook/mms-tts-eng (faster, flatter)
+    tts_voice: str = "bf_emma"                         # Kokoro voice: bf_/bm_ British, af_/am_ American
+    tts_speed: float = 0.95                            # Kokoro speaking speed: below 1 is slower
+    tts_dir: Path = PROJECT_ROOT / "data" / "models" / "kokoro"     # Kokoro's files (downloaded on the first start)
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"  # turns text into vectors for search
     llm_model: str = "qwen/qwen3.8-27b"                # the LLM that runs the conversation (see LLM_BASE_URL)
     # A sentence a caller might say. Whisper uses it as a hint, so it mishears these words less. Empty = no hint.

@@ -211,7 +211,9 @@ def real_retriever():
 
 @pytest.mark.parametrize("question,topic", [
     ("What time do you open on Saturday?", "Opening hours"),
-    ("How much is a check-up?", "Prices"),
+    ("How much is a check-up?", "Check-up"),         # the Check-up section states the price too
+    ("How much is a root canal?", "Root canal treatment"),
+    ("What is a scale and polish?", "Scale and polish"),
     ("Do you take dental insurance?", "Insurance and payment"),
     ("Where is the clinic?", "Location and parking"),
     ("Can I bring my kids?", "Children"),

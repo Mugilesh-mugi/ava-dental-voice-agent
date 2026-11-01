@@ -72,7 +72,7 @@ def build_components(settings: Settings) -> Components:
         print(f"  - Speech-to-text ({settings.stt_engine}): {settings.stt_model}", flush=True)
         stt = build_speech_to_text(settings.stt_engine, settings.stt_model, settings.stt_prompt or None)
         print(f"  - Text-to-speech: {settings.tts_model}", flush=True)
-        tts = TextToSpeech(settings.tts_model)
+        tts = TextToSpeech(settings.tts_model, settings.tts_voice, settings.tts_speed, settings.tts_dir)
     except ModelLoadError as e:
         print(f"\nERROR: {e}\n", file=sys.stderr, flush=True)
         sys.exit(1)
