@@ -1,8 +1,9 @@
-"""Text-to-speech ("the mouth"): Kokoro (the default) or Meta's MMS, chosen by the TTS_MODEL setting.
+"""Text-to-speech ("the mouth"): Piper (the default), Kokoro or Meta's MMS, chosen by the TTS_MODEL setting.
 
-    TTS_MODEL=kokoro                 Kokoro-82M through ONNX Runtime: more natural, has a speed setting, says every digit.
-    TTS_MODEL=facebook/mms-tts-eng   MMS through Hugging Face Transformers: faster on a CPU, but one fixed quick pace and it
-                                     cannot say the digits 7, 8 or 9 (speech.for_voice spells numbers out for it).
+    TTS_MODEL=piper                  Piper: by far the fastest on a CPU (a reply in well under a second), natural enough.
+    TTS_MODEL=kokoro                 Kokoro-82M through ONNX Runtime: the most natural voice here, but about as slow as real time.
+    TTS_MODEL=facebook/mms-tts-eng   MMS through Hugging Face Transformers: one fixed quick pace and it cannot say the
+                                     digits 7, 8 or 9 (speech.for_voice spells numbers out for it).
 """
 from __future__ import annotations
 
@@ -20,36 +21,60 @@ log = logging.getLogger("voice_agent.tts")
 KOKORO_MODEL_FILE = "kokoro-v1.0.int8.onnx"     # the small (about 90 MB) version of the model
 KOKORO_VOICES_FILE = "voices-v1.0.bin"
 KOKORO_DOWNLOAD = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
+KOKORO_DEFAULT_VOICE = "bf_emma"                # British woman
+
+PIPER_DOWNLOAD = "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
+PIPER_DEFAULT_VOICE = "en_GB-jenny_dioco-medium"    # British woman
+PIPER_PAUSE_SECONDS = 0.2                       # silence between sentences
 
 
 def is_kokoro(model_name: str) -> bool:
     return model_name.lower().startswith("kokoro")
 
 
-def _download_if_missing(folder: Path, name: str) -> Path:
-    path = folder / name
+def is_piper(model_name: str) -> bool:
+    return model_name.lower().startswith("piper")
+
+
+def _download(url: str, path: Path) -> Path:
     if not path.exists():
-        folder.mkdir(parents=True, exist_ok=True)
-        log.info("tts_downloading_kokoro_file name=%s", name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        log.info("tts_downloading name=%s", path.name)
         part = path.with_suffix(path.suffix + ".part")      # so a half-finished download is never mistaken for the file
-        urllib.request.urlretrieve(KOKORO_DOWNLOAD + name, part)
+        urllib.request.urlretrieve(url, part)
         part.replace(path)
     return path
 
 
+def _piper_files(folder: Path, voice: str) -> tuple[Path, Path]:
+    """A Piper voice is two files. "en_GB-jenny_dioco-medium" lives at en/en_GB/jenny_dioco/medium/ in the voice library."""
+    region, name, quality = voice.split("-")
+    base = f"{PIPER_DOWNLOAD}{region.split('_')[0]}/{region}/{name}/{quality}/{voice}"
+    return (_download(base + ".onnx", folder / f"{voice}.onnx"),
+            _download(base + ".onnx.json", folder / f"{voice}.onnx.json"))
+
+
 class TextToSpeech:
-    def __init__(self, model_name: str, voice: str = "bf_emma", speed: float = 0.95, model_dir: Path | str = "data/models/kokoro"):
+    def __init__(self, model_name: str, voice: str = "", speed: float = 1.0, model_dir: Path | str = "data/models"):
         self.model_name = model_name
-        self._voice, self._speed = voice, speed
+        self._speed = speed
         self._lock = threading.Lock()
-        self._kokoro = self._pipeline = None
+        self._kokoro = self._piper = self._pipeline = None
+        folder = Path(model_dir)
         try:
-            if is_kokoro(model_name):
+            if is_piper(model_name):
+                from piper import PiperVoice, SynthesisConfig
+
+                self._voice = voice or PIPER_DEFAULT_VOICE
+                model_file, _ = _piper_files(folder / "piper", self._voice)
+                self._piper = PiperVoice.load(model_file)
+                self._piper_config = SynthesisConfig(length_scale=1.0 / speed)     # length_scale above 1 is slower
+            elif is_kokoro(model_name):
                 from kokoro_onnx import Kokoro
 
-                folder = Path(model_dir)
-                self._kokoro = Kokoro(str(_download_if_missing(folder, KOKORO_MODEL_FILE)),
-                                      str(_download_if_missing(folder, KOKORO_VOICES_FILE)))
+                self._voice = voice or KOKORO_DEFAULT_VOICE
+                self._kokoro = Kokoro(str(_download(KOKORO_DOWNLOAD + KOKORO_MODEL_FILE, folder / "kokoro" / KOKORO_MODEL_FILE)),
+                                      str(_download(KOKORO_DOWNLOAD + KOKORO_VOICES_FILE, folder / "kokoro" / KOKORO_VOICES_FILE)))
             else:
                 from transformers import pipeline
 
@@ -60,6 +85,12 @@ class TextToSpeech:
     def speak(self, text: str) -> tuple[int, np.ndarray]:
         """Return (sample_rate, audio as 16-bit whole numbers), the format Gradio plays directly."""
         with self._lock:
+            if self._piper is not None:
+                chunks = list(self._piper.synthesize(text, self._piper_config))      # one chunk per sentence
+                rate = chunks[0].sample_rate
+                pause = np.zeros(int(rate * PIPER_PAUSE_SECONDS), dtype=np.int16)
+                parts = [part for c in chunks for part in (c.audio_int16_array, pause)][:-1]
+                return int(rate), np.concatenate(parts).astype(np.int16)
             if self._kokoro is not None:
                 # "bf_" voices are British English, "af_"/"am_" American: the language code must match the voice.
                 audio, rate = self._kokoro.create(text, voice=self._voice, speed=self._speed,
