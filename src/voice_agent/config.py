@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     # SecretStr hides the key if the settings are ever printed or logged.
     llm_base_url: str = "https://api.groq.com/openai/v1"
     llm_api_key: SecretStr | None = None
+    # A second LLM that takes over when the first is busy or failing (used only if its key is set)
+    llm_fallback_api_key: SecretStr | None = None
+    llm_fallback_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    llm_fallback_model: str = "gemini-3.5-flash"
     # How hard a "thinking" model thinks before answering: "low" for gpt-oss, "none" for Qwen3. A caller is
     # waiting, so blank picks a quick default for the model.
     llm_reasoning_effort: str | None = None
@@ -69,7 +73,7 @@ class Settings(BaseSettings):
     # ---------- LLM behaviour ----------
     llm_max_tokens: int = Field(default=120, ge=16, le=1024)    # longest reply the LLM may write
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0) # low = more predictable answers
-    llm_timeout_s: float = Field(default=20.0, gt=0)            # give up on the LLM after this many seconds
+    llm_timeout_s: float = Field(default=25.0, gt=0)            # give up on the LLM after this many seconds
 
     # ---------- FAQ search (RAG) ----------
     # Similarity score goes from -1 to 1. If the best FAQ match scores below this,
@@ -115,6 +119,10 @@ class Settings(BaseSettings):
     @property
     def llm_api_key_value(self) -> str | None:
         return self.llm_api_key.get_secret_value() if self.llm_api_key else None
+
+    @property
+    def llm_fallback_api_key_value(self) -> str | None:
+        return self.llm_fallback_api_key.get_secret_value() if self.llm_fallback_api_key else None
 
     @property
     def dashboard_password_value(self) -> str | None:

@@ -187,6 +187,8 @@ class AgentNodes:
             return True
         if "?" in reply and not guardrails.refuses(reply):
             return False                                    # a normal question back to the caller
+        if guardrails.wants_to_book(caller_text):
+            return False                                    # "I want to book" starts a booking; the FAQ merely mentions booking
         return self._retriever.search(caller_text).answerable
 
     def _agent_failed(self, state: CallState, agent: dict, turn: dict, reply: str, route: str) -> dict:

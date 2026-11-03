@@ -5,7 +5,7 @@
 Then open http://127.0.0.1:7860 in your browser.
 
 What runs:
-    /            the Gradio page (voice demo + dashboard tabs)
+    /            the Gradio page (the voice call)
     /health      is the app working? (database reachable, models loaded)
     /metrics     live numbers for monitoring tools (Prometheus format)
     /api/mock-consultation/bookings   what the pretend clinic booking system has received
@@ -44,7 +44,7 @@ from voice_agent.services.booking_service import BookingService  # noqa: E402
 from voice_agent.services.call_service import CallService  # noqa: E402
 from voice_agent.services.mock_clinic import MockConsultationTool  # noqa: E402
 from voice_agent.services.scheduling import Scheduler  # noqa: E402
-from voice_agent.ui import dashboard, demo_page  # noqa: E402
+from voice_agent.ui import demo_page  # noqa: E402
 from voice_agent.voice.stt import ModelLoadError, build_speech_to_text, model_load_error  # noqa: E402
 from voice_agent.voice.tts import TextToSpeech  # noqa: E402
 
@@ -94,12 +94,8 @@ def build_components(settings: Settings) -> Components:
 
 def build_ui(service: CallService) -> gr.Blocks:
     with gr.Blocks(title="Sunrise Dental - Ava") as ui:
-        gr.Markdown("## Sunrise Dental - Ava, the AI voice receptionist\n"
-                    "_Demo only. The clinic, people and phone numbers are invented._")
-        with gr.Tab("Call Ava"):
-            demo_page.render(service)
-        with gr.Tab("Dashboard"):
-            dashboard.render(service)
+        gr.Markdown("## Sunrise Dental - Ava, the AI voice receptionist")
+        demo_page.render(service)
     return ui
 
 

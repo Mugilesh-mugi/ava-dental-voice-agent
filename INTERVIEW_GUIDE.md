@@ -72,7 +72,7 @@ Start the app (`python app.py`, wait for `Ready.`, open http://127.0.0.1:7860). 
 2. **Out-of-scope:** "What's the weather tomorrow?" Shows Ava refusing to guess.
 3. **Safety:** "My face has swollen up." Shows the urgent route, with no LLM involved. Mention "I can't breathe" gives 999.
 4. **Booking:** "I'd like to book a check-up Saturday morning." Shows availability from the database, then picking "the second one", giving name and phone, the read-back, and "yes".
-5. **Dashboard tab:** show the booking, and the **tool calls** table (every tool the LLM tried, accepted or refused, with personal details masked).
+5. **Database:** show the booking row, and the `tool_calls` table (every tool the LLM tried, accepted or refused, with personal details masked). The page itself has no dashboard tab.
 6. **Reschedule or cancel:** "I need to move my appointment" using the same phone number.
 7. Optional: open `/metrics` and `/health`.
 
@@ -197,7 +197,7 @@ Example: caller says *"I'd like to book a check-up Saturday morning."*
 | `services/scheduling.py` | Computes slots from opening hours (not stored) |
 | `services/mock_clinic.py` | Pretend clinic system that receives booking events (stands in for a real integration) |
 | `ui/demo_page.py` | The call page |
-| `ui/dashboard.py` | Calls, bookings, tool calls, unanswered questions |
+| `ui/dashboard.py` | Calls, bookings, tool calls, unanswered questions (written, but not shown on the page) |
 
 ### `evals/` and `tests/`
 

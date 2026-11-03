@@ -131,3 +131,12 @@ def test_emergencies_come_before_everything_else(agent_pending):
 
 def test_a_change_waiting_for_yes_does_not_hide_an_emergency():
     assert rules.decide_intent("yes but I can't breathe", agent_pending=True) == "severe"
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("i want to book an appointment", True), ("I'd like to make an appointment", True), ("can I book a check-up", True),
+    ("book me in for tomorrow", True), ("I need an appointment", True),
+    ("how much is an appointment", False), ("do you do emergency appointments", False),
+    ("what are the treatments you offer", False)])
+def test_wants_to_book(text, expected):
+    assert guardrails.wants_to_book(text) is expected

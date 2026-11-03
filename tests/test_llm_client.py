@@ -225,3 +225,58 @@ def test_the_text_is_cleaned_for_the_voice():
     assert plain_text(messy) == """A check-up, it's "free" today..."""
     assert plain_text(None) == "" and plain_text("  two lines ") == "two lines"
     assert make_llm(lambda r: ok(f"Your check{hyphen}up is booked.")).chat([{"role": "user", "content": "x"}]) == "Your check-up is booked."
+
+
+class _Scripted:
+    def __init__(self, result):
+        self.result, self.calls = result, 0
+
+    def chat(self, messages):
+        self.calls += 1
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+    chat_tools = lambda self, messages, tools, tool_choice="auto": self.chat(messages)
+
+
+def test_fallback_answers_when_the_first_llm_is_rate_limited():
+    from voice_agent.llm.client import FallbackLLM
+    first, second = _Scripted(LLMRateLimited("busy")), _Scripted("from the backup")
+    assert FallbackLLM(first, second).chat([]) == "from the backup" and (first.calls, second.calls) == (1, 1)
+
+
+def test_fallback_is_not_used_when_the_first_llm_works():
+    from voice_agent.llm.client import FallbackLLM
+    first, second = _Scripted("main"), _Scripted("backup")
+    assert FallbackLLM(first, second).chat([]) == "main" and second.calls == 0
+
+
+def test_when_both_fail_the_first_error_is_raised():
+    from voice_agent.llm.client import FallbackLLM
+    with pytest.raises(LLMRateLimited):
+        FallbackLLM(_Scripted(LLMRateLimited("busy")), _Scripted(LLMError("down"))).chat_tools([], [])
+
+
+def test_a_broken_tool_call_is_retried_with_a_tool_required():
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return failure(400, "tool_use_failed") if len(bodies) == 1 else ok(tool_calls=[tool_call("check_availability", "{}")])
+
+    make_llm(handler).chat_tools([{"role": "user", "content": "x"}], SPECS)
+    assert bodies[0]["tool_choice"] == "auto" and bodies[1]["tool_choice"] == "required"
+
+
+def test_a_slow_first_try_is_retried_once_then_gives_up():
+    import httpx as _httpx
+    attempts = []
+
+    def handler(request):
+        attempts.append(1)
+        raise _httpx.ConnectTimeout("slow")
+
+    with pytest.raises(LLMError, match="Timeout"):
+        make_llm(handler).chat_tools([{"role": "user", "content": "x"}], SPECS)
+    assert len(attempts) == 2

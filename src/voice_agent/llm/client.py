@@ -33,7 +33,8 @@ from ..config import Settings
 log = logging.getLogger(__name__)
 
 MIN_OUTPUT_TOKENS = 400        # "thinking" models count their thinking against this, so a small cap gives empty answers
-MAX_RATE_LIMIT_WAIT_S = 3.0    # a caller is waiting: longer than this and we give up instead
+QUICK_FIRST_TRY_S = 12.0       # the first try is abandoned after this; the retry gets the full LLM_TIMEOUT_S
+MAX_RATE_LIMIT_WAIT_S = 3.0   # a caller is waiting: longer than this and we give up instead
 
 _PLAIN = str.maketrans({"‐": "-", "‑": "-", "‒": "-", "–": "-", "—": ", ", "‘": "'",
                         "’": "'", "“": '"', "”": '"', "…": "...", " ": " ", " ": " "})
@@ -97,10 +98,12 @@ class ChatLLM:
                               http_client=http_client)
         self._reasoning = reasoning_effort or default_reasoning_effort(model)
         self._chat = self._build()
+        self._quick = self._build(min(timeout_s, QUICK_FIRST_TRY_S))
 
-    def _build(self) -> ChatOpenAI:
+    def _build(self, timeout_s: float | None = None) -> ChatOpenAI:
         extra = {"reasoning_effort": self._reasoning} if self._reasoning else None
-        return ChatOpenAI(**self._settings, extra_body=extra)
+        settings = {**self._settings, "timeout": timeout_s} if timeout_s else self._settings
+        return ChatOpenAI(**settings, extra_body=extra)
 
     # ---------- the two public calls ----------
     def chat(self, messages: list[dict]) -> str:
@@ -124,9 +127,10 @@ class ChatLLM:
     # ---------- the request itself ----------
     def _invoke(self, messages: list[dict], tools: list[dict] | None = None, tool_choice: str = "auto") -> AIMessage:
         prepared = convert_to_messages(messages)
-        rate_retries, malformed_retries = 1, 1        # each fix is tried once: a caller is waiting
+        rate_retries, malformed_retries, slow_retries = 1, 2, 1   # a caller is waiting: few tries
         while True:
-            runnable = self._chat if tools is None else self._chat.bind_tools(tools, tool_choice=tool_choice)
+            chat = self._quick if slow_retries else self._chat    # the first try gives up early; the retry waits longer
+            runnable = chat if tools is None else chat.bind_tools(tools, tool_choice=tool_choice)
             try:
                 reply = runnable.invoke(prepared)
                 break
@@ -143,15 +147,25 @@ class ChatLLM:
                 if status == 400 and self._reasoning and "reasoning" in str(e):
                     self._reasoning = None                            # this model has no such setting
                     self._chat = self._build()
+                    self._quick = self._build(min(self._settings["timeout"], QUICK_FIRST_TRY_S))
                     continue
                 if status == 400 and _error_kind(e) == "tool_use_failed" and malformed_retries:
                     malformed_retries -= 1                                      # the model wrote a broken tool call: ask again
+                    if tools is not None and tool_choice == "auto":
+                        tool_choice = "required"        # it meant to call a tool: make it pick one that exists
                     log.warning("llm_tool_call_malformed_retrying")
                     continue
                 monitoring.LLM_REQUESTS.labels("error").inc()
                 log.warning("llm_http_error", extra={"status": status, "kind": _error_kind(e)})
                 raise LLMError(f"HTTP {status}: {str(e)[:200]}") from e
-            except Exception as e:                                    # no network, timeout, unreadable reply...
+            except (openai.APITimeoutError, openai.APIConnectionError) as e:   # slow or dropped: try once more
+                if slow_retries:
+                    slow_retries -= 1
+                    log.warning("llm_slow_retrying", extra={"error": type(e).__name__})
+                    continue
+                monitoring.LLM_REQUESTS.labels("error").inc()
+                raise LLMError(f"{type(e).__name__}: {str(e)[:200]}") from e
+            except Exception as e:                                    # unreadable reply...
                 monitoring.LLM_REQUESTS.labels("error").inc()
                 raise LLMError(f"{type(e).__name__}: {str(e)[:200]}") from e
         monitoring.LLM_REQUESTS.labels("ok").inc()
@@ -180,8 +194,40 @@ def _error_kind(error: openai.APIStatusError) -> str:
     return str(getattr(error, "code", None) or getattr(error, "type", None) or "unknown")
 
 
-def build_llm(settings: Settings) -> ChatLLM:
-    """The LLM chosen in the settings."""
+class FallbackLLM:
+    """Two LLMs in a row: if the first cannot answer (busy, slow, broken reply), the second gets the same request.
+    If both fail, the first one's error is raised, so a rate limit still reads as a rate limit."""
+
+    def __init__(self, primary: LLM, fallback: LLM):
+        self._primary, self._fallback = primary, fallback
+        self.model = getattr(primary, "model", "")
+
+    def chat(self, messages: list[dict]) -> str:
+        return self._try(lambda llm: llm.chat(messages))
+
+    def chat_tools(self, messages: list[dict], tools: list[dict], tool_choice: str = "auto") -> ToolReply:
+        return self._try(lambda llm: llm.chat_tools(messages, tools, tool_choice))
+
+    def _try(self, call):
+        try:
+            return call(self._primary)
+        except LLMError as first:
+            log.warning("llm_fallback_used", extra={"reason": type(first).__name__})
+            try:
+                return call(self._fallback)
+            except LLMError as second:
+                log.error("llm_fallback_failed", extra={"error": str(second)})
+                raise first from None
+
+
+def build_llm(settings: Settings) -> LLM:
+    """The LLM chosen in the settings, with a second one behind it if a fallback key is set."""
     print(f"  - LLM ({settings.llm_base_url}): {settings.llm_model}", flush=True)
-    return ChatLLM(settings.llm_model, settings.llm_base_url, settings.llm_api_key_value, settings.llm_max_tokens,
-                   settings.llm_temperature, settings.llm_timeout_s, settings.llm_reasoning_effort)
+    primary = ChatLLM(settings.llm_model, settings.llm_base_url, settings.llm_api_key_value, settings.llm_max_tokens,
+                      settings.llm_temperature, settings.llm_timeout_s, settings.llm_reasoning_effort)
+    if not settings.llm_fallback_api_key_value:
+        return primary
+    print(f"  - Fallback LLM ({settings.llm_fallback_base_url}): {settings.llm_fallback_model}", flush=True)
+    fallback = ChatLLM(settings.llm_fallback_model, settings.llm_fallback_base_url, settings.llm_fallback_api_key_value,
+                       settings.llm_max_tokens, settings.llm_temperature, settings.llm_timeout_s)
+    return FallbackLLM(primary, fallback)

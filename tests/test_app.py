@@ -48,13 +48,13 @@ def test_demo_page_handlers_run_a_whole_call(build_service, db):
     ui = app_module.build_ui(service)
     handlers = {f.name: f.fn for f in ui.fns.values()}
 
-    session, chat, audio, info, *_ = handlers["start_call"](None, [])
+    session, chat, audio, *_ = handlers["start_call"](None, [])
     assert chat[0]["role"] == "assistant" and "Sunrise Dental" in chat[0]["content"]
-    assert audio is not None and "Call ID" in info
+    assert audio is not None
 
-    session, chat, audio, info, typed, *_ = handlers["on_text"]("I can't breathe", session, chat)
+    session, chat, audio, typed, *_ = handlers["on_text"]("I can't breathe", session, chat)
     assert chat[-2] == {"role": "user", "content": "I can't breathe"}
-    assert "999" in chat[-1]["content"] and "emergency_999" in info and typed == ""
+    assert "999" in chat[-1]["content"] and typed == ""
 
     session, chat, *_ = handlers["on_audio"]((16_000, [0] * 16_000), session, chat)   # FakeSTT hears an FAQ question
     assert chat[-2]["content"] == "What time do you open on Saturday?"

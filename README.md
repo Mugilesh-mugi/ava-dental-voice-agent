@@ -53,7 +53,7 @@ The LLM decides *what to do*; the code decides *whether it may* ([tools/base.py]
 - **A change needs a spoken yes, and the code makes it, not the LLM.** The book/move/cancel tools only stage the change. Ava reads it back ("Your name is..., your appointment would be..., shall I book that?"). When the caller says yes, `agent_confirm` makes the change. If the caller says no, or something else, nothing is changed.
 - **No invented values.** Times are slot ids (A, B, C) from the last `check_availability`; booking ids must come from `find_bookings` (or a booking made in this call); a phone number is only accepted if the caller actually said it. A refused call tells the LLM why, and the LLM must then ask the caller (no other tool is allowed straight after a refusal).
 - **The code speaks the facts.** A successful tool returns the exact words, so the LLM cannot garble a time, price or reference number. If the LLM writes a time or a price in its own words, the reply is rejected and it is forced to use a tool ([guardrails.py](src/voice_agent/agent/guardrails.py)). Medical advice in its words is blocked.
-- **Audit trail.** Every tool call is stored in the `tool_calls` table (tool, accepted or refused, time taken, arguments with names, reasons and phone numbers masked) and shown on the dashboard. `/metrics` counts tool calls, LLM requests and tokens.
+- **Audit trail.** Every tool call is stored in the `tool_calls` table (tool, accepted or refused, time taken, arguments with names, reasons and phone numbers masked) and kept for review. `/metrics` counts tool calls, LLM requests and tokens.
 - **If the LLM is down or rate limited:** Ava says so, and after two failures in a row she hands over to a person.
 
 To add a tool: write a class in [src/voice_agent/tools/](src/voice_agent/tools/) (name, description, parameters, `run`) and add it to `default_tools()` in `registry.py`.
@@ -72,7 +72,7 @@ The clinic calendar is **worked out** from the opening hours (Mon-Fri 8am-6pm, S
 
 - **No double booking, ever.** The `bookings` table has a unique index on the start time of *confirmed* bookings. Two callers choosing the same time at the same moment: one wins and the other hears "that time has just been taken". (Checked on PostgreSQL: 8 simultaneous attempts gave 1 booking and 7 refusals.) A cancelled booking frees its time.
 - **Dates and times** ("Saturday morning", "tomorrow at 3", "the 12th", "half past ten") are understood by plain rules in [timeparse.py](src/voice_agent/agent/timeparse.py), because they must be exact. Times are stored in UTC and shown in the clinic's time zone, so 9am stays 9am when the clocks change. [speech.py](src/voice_agent/agent/speech.py) spells dates, times and digits out, because the voice reads "9:30" badly.
-- **If the clinic's own system is down**, the booking is still saved (`sync_status = pending`) and the dashboard shows what has not been sent.
+- **If the clinic's own system is down**, the booking is still saved (`sync_status = pending`) and the database shows what has not been sent.
 - **Upgrading an existing database:** on start, the app adds the new columns to an older `bookings` table and keeps the old rows. It is safe to run repeatedly.
 
 ### Project layout
@@ -104,7 +104,7 @@ voice-agent/
 │   ├── voice/                     stt.py, tts.py           (extra: this is a VOICE agent)
 │   ├── services/                  call_service.py, booking_service.py, scheduling.py, mock_clinic.py
 │   │                              (extra: one phone call, the appointment calendar, the pretend clinic system)
-│   └── ui/                        demo_page.py, dashboard.py   (extra: the web page)
+│   └── ui/                        demo_page.py, dashboard.py   (the call page; the dashboard is not shown)
 │
 ├── evals/                         test_cases.json, run_evals.py (+ run_wer.py, bench_tool_calling.py)
 └── tests/                         test_tools.py, test_retriever.py, test_guardrails.py (+ the conversation tests)
@@ -150,7 +150,7 @@ python app.py
 Wait for `Ready.`, then open **http://127.0.0.1:7860**.
 
 - **Call Ava** tab: press **Start call** to hear the greeting, then record a question with the microphone. There is also a text box, as a backup if the microphone misbehaves. The right-hand panel shows the route taken, the search similarity score, and the time for each stage. **End call** saves the call's final outcome.
-- **Dashboard** tab: press **Refresh** to see calls by outcome, average stage times, handoff rate, emergencies caught, the **upcoming appointments** (phone numbers are partly hidden), every **tool call** the LLM made, unanswered questions, and any call's full conversation.
+- The page shows only the call: the conversation, the microphone, the text box and Ava's voice. The dashboard view (calls by outcome, stage times, upcoming appointments, tool calls, unanswered questions) is still written in `ui/dashboard.py` but is not shown on the page. The same data is in the database and at `/metrics`.
 
 | Address | What it is |
 |---|---|

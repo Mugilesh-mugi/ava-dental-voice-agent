@@ -169,6 +169,16 @@ def asks_for_advice(text: str) -> bool:
     return bool(_ADVICE.search(t)) and not _ADVICE_EXCEPTION.search(t)
 
 
+_BOOKING_REQUEST = re.compile(
+    r"\b(?:(?:want|need|like|wanna|looking|trying)\b.{0,15}\b(?:book|appointment|schedule|reserve)"
+    r"|(?:can|could|may) (?:i|you) (?:please )?(?:book|make|schedule)|book (?:me|an?|my|us)\b|make (?:me )?an? appointment)")
+
+
+def wants_to_book(text: str) -> bool:
+    """The caller is asking to make an appointment (not asking a question about appointments)."""
+    return bool(_BOOKING_REQUEST.search(prepare(text)))
+
+
 def looks_like_advice(llm_reply: str) -> bool:
     """Safety net for LLM output: True if the reply seems to give dental or medical advice."""
     return any(p.search(llm_reply) for p in _ADVICE_OUTPUT)
